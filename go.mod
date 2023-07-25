@@ -8,6 +8,7 @@ require (
 	github.com/cloudwego/kitex v0.6.1
 	github.com/kitex-contrib/obs-opentelemetry v0.2.3
 	github.com/zeromicro/go-zero v1.5.4
+	google.golang.org/grpc v1.56.2
 )
 
 require (
