@@ -19,3 +19,10 @@ func (e *BizError) ToGRPCError() error {
 func (e *BizError) Error() string {
 	return util.JSONF(e)
 }
+
+func NewBizError(code uint32, msg string) error {
+	return (&BizError{
+		Code: code,
+		Msg:  msg,
+	}).ToGRPCError()
+}
