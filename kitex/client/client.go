@@ -12,7 +12,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/kitex-contrib/obs-opentelemetry/tracing"
 
-	"github.com/xh-polaris/gopkg/kitex/client/middleware"
+	"github.com/xh-polaris/gopkg/kitex/middleware"
 	"github.com/xh-polaris/gopkg/util/log"
 )
 
@@ -33,7 +33,7 @@ func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...
 		}()...),
 		client.WithSuite(tracing.NewClientSuite()),
 		client.WithClientBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: fromName}),
-		client.WithMiddleware(middleware.LogMiddleware(toName)),
+		client.WithInstanceMW(middleware.LogMiddleware(toName)),
 		client.WithLoadBalancer(&LoadBalancer{ServiceName: strings.ReplaceAll(toName, ".", "-")}),
 	)
 	if err != nil {
