@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/kitex/client"
 	"github.com/cloudwego/kitex/pkg/discovery"
 	"github.com/cloudwego/kitex/pkg/loadbalance"
+	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/kitex-contrib/obs-opentelemetry/tracing"
 
@@ -17,18 +18,15 @@ import (
 )
 
 const (
-	EnvHeader     = "X-Xh-Env"
-	LaneHeader    = "X-Xh-Lane"
+	EnvHeader     = "X_XH_ENV"
+	LaneHeader    = "X_Xh_LANE"
 	magicEndpoint = "magic-host:magic-port"
 )
 
-func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...client.Option) (C, error), directEndpoints ...string) C {
+func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...client.Option) (C, error)) C {
 	cli, err := fn(
 		fromName,
 		client.WithHostPorts(func() []string {
-			if len(directEndpoints) != 0 {
-				return directEndpoints
-			}
 			return []string{magicEndpoint}
 		}()...),
 		client.WithSuite(tracing.NewClientSuite()),
@@ -71,12 +69,26 @@ func (p *Picker) Next(ctx context.Context, _ interface{}) discovery.Instance {
 
 	// 选择基准环境
 	env, ok := metainfo.GetPersistentValue(ctx, EnvHeader)
+	if !ok {
+		var md metadata.MD
+		md, ok = metadata.FromIncomingContext(ctx)
+		if ok && len(md[EnvHeader]) > 0 {
+			env = md[EnvHeader][0]
+		}
+	}
 	if ok && env == "test" {
 		host += "-test"
 	}
 
 	// 检查泳道是否部署该服务
 	lane, ok := metainfo.GetPersistentValue(ctx, LaneHeader)
+	if !ok {
+		var md metadata.MD
+		md, ok = metadata.FromIncomingContext(ctx)
+		if ok && len(md[LaneHeader]) > 0 {
+			lane = md[LaneHeader][0]
+		}
+	}
 	if ok && lane != "" {
 		addr, err := net.ResolveTCPAddr("tcp", host+"-"+lane+".svc.cluster.local:8080")
 		if err == nil {
