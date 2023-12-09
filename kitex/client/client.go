@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/loadbalance"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	prometheus "github.com/kitex-contrib/monitor-prometheus"
 	"github.com/kitex-contrib/obs-opentelemetry/tracing"
 
 	"github.com/xh-polaris/gopkg/kitex/middleware"
@@ -23,6 +24,8 @@ const (
 	magicEndpoint = "magic-host:magic-port"
 )
 
+var tracer = prometheus.NewClientTracer(":9091", "/client/metrics")
+
 func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...client.Option) (C, error)) C {
 	cli, err := fn(
 		fromName,
@@ -30,6 +33,7 @@ func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...
 			return []string{magicEndpoint}
 		}()...),
 		client.WithSuite(tracing.NewClientSuite()),
+		client.WithTracer(tracer),
 		client.WithClientBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: fromName}),
 		client.WithInstanceMW(middleware.LogMiddleware(toName)),
 		client.WithLoadBalancer(&LoadBalancer{ServiceName: strings.ReplaceAll(toName, ".", "-")}),

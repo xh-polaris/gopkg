@@ -9,6 +9,7 @@ require (
 	github.com/elastic/go-elasticsearch/v8 v8.9.0
 	github.com/google/uuid v1.3.0
 	github.com/jinzhu/copier v0.3.5
+	github.com/kitex-contrib/monitor-prometheus v0.2.0
 	github.com/kitex-contrib/obs-opentelemetry v0.2.3
 	github.com/zeromicro/go-zero v1.5.4
 	go.mongodb.org/mongo-driver v1.12.0
