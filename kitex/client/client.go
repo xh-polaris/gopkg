@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/loadbalance"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	prometheus "github.com/kitex-contrib/monitor-prometheus"
 	"github.com/kitex-contrib/obs-opentelemetry/tracing"
 
 	"github.com/xh-polaris/gopkg/kitex/middleware"
@@ -30,6 +31,7 @@ func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...
 			return []string{magicEndpoint}
 		}()...),
 		client.WithSuite(tracing.NewClientSuite()),
+		client.WithTracer(prometheus.NewClientTracer(":9092", "/metrics")),
 		client.WithClientBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: fromName}),
 		client.WithInstanceMW(middleware.LogMiddleware(toName)),
 		client.WithLoadBalancer(&LoadBalancer{ServiceName: strings.ReplaceAll(toName, ".", "-")}),
