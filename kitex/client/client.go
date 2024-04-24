@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 
@@ -11,35 +12,39 @@ import (
 	"github.com/cloudwego/kitex/pkg/loadbalance"
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/transport"
 	prometheus "github.com/kitex-contrib/monitor-prometheus"
 	"github.com/kitex-contrib/obs-opentelemetry/tracing"
+	"k8s.io/utils/env"
 
+	"github.com/xh-polaris/gopkg/consts"
 	"github.com/xh-polaris/gopkg/kitex/middleware"
 	"github.com/xh-polaris/gopkg/util/log"
 )
 
-const (
-	EnvHeader     = "X_XH_ENV"
-	LaneHeader    = "X_Xh_LANE"
-	magicEndpoint = "magic-host:magic-port"
-)
-
 var tracer = prometheus.NewClientTracer(":9091", "/client/metrics")
 
-func NewClient[C any](fromName, toName string, fn func(fromName string, opts ...client.Option) (C, error)) C {
-	cli, err := fn(
-		fromName,
-		client.WithHostPorts(func() []string {
-			return []string{magicEndpoint}
-		}()...),
+func NewClient[C any](fromName, toName string, fn func(string, ...client.Option) (C, error), opts ...client.Option) C {
+	opts = append(opts,
+		client.WithHostPorts(fmt.Sprintf("%s:8080", strings.ReplaceAll(toName, ".", "-"))),
 		client.WithSuite(tracing.NewClientSuite()),
 		client.WithTracer(tracer),
 		client.WithClientBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: fromName}),
 		client.WithInstanceMW(middleware.LogMiddleware(toName)),
-		client.WithLoadBalancer(&LoadBalancer{ServiceName: strings.ReplaceAll(toName, ".", "-")}),
+		client.WithInstanceMW(middleware.EnvironmentMiddleware),
+		client.WithTransportProtocol(transport.GRPC),
+		client.WithMetaHandler(transmeta.ClientHTTP2Handler),
+	)
+	if val, err := env.GetBool("IGNORE_MESH", false); err != nil && val {
+		opts = append(opts, client.WithLoadBalancer(&LoadBalancer{ServiceName: strings.ReplaceAll(toName, ".", "-")}))
+	}
+	cli, err := fn(
+		fromName,
+		opts...,
 	)
 	if err != nil {
-		log.Error("[NewClient], err=%v", err)
+		log.Error("[NewClient], toName=%s, err=%v", toName, err)
 	}
 	return cli
 }
@@ -65,19 +70,15 @@ type Picker struct {
 }
 
 func (p *Picker) Next(ctx context.Context, _ interface{}) discovery.Instance {
-	if len(p.Instances) != 0 && p.Instances[0].Address().String() != magicEndpoint {
-		return p.Instances[0]
-	}
-
 	var host = p.ServiceName + ".xh-polaris"
 
 	// 选择基准环境
-	env, ok := metainfo.GetPersistentValue(ctx, EnvHeader)
+	env, ok := metainfo.GetPersistentValue(ctx, consts.EnvHeader)
 	if !ok {
 		var md metadata.MD
 		md, ok = metadata.FromIncomingContext(ctx)
-		if ok && len(md[EnvHeader]) > 0 {
-			env = md[EnvHeader][0]
+		if ok && len(md[consts.EnvHeader]) > 0 {
+			env = md[consts.EnvHeader][0]
 		}
 	}
 	if ok && env == "test" {
@@ -85,12 +86,12 @@ func (p *Picker) Next(ctx context.Context, _ interface{}) discovery.Instance {
 	}
 
 	// 检查泳道是否部署该服务
-	lane, ok := metainfo.GetPersistentValue(ctx, LaneHeader)
+	lane, ok := metainfo.GetPersistentValue(ctx, consts.LaneHeader)
 	if !ok {
 		var md metadata.MD
 		md, ok = metadata.FromIncomingContext(ctx)
-		if ok && len(md[LaneHeader]) > 0 {
-			lane = md[LaneHeader][0]
+		if ok && len(md[consts.LaneHeader]) > 0 {
+			lane = md[consts.LaneHeader][0]
 		}
 	}
 	if ok && lane != "" {
