@@ -8,8 +8,8 @@ import (
 )
 
 type BizError struct {
-	Code uint32
-	Msg  string
+	Code uint32 `json:"code"`
+	Msg  string `json:"msg"`
 }
 
 func (e *BizError) ToGRPCError() error {
