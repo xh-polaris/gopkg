@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/kitex/pkg/remote/trans/nphttp2/metadata"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/pkg/utils"
 	"github.com/cloudwego/kitex/transport"
 	prometheus "github.com/kitex-contrib/monitor-prometheus"
 	"github.com/kitex-contrib/obs-opentelemetry/tracing"
@@ -26,15 +27,16 @@ import (
 var tracer = prometheus.NewClientTracer(":9091", "/client/metrics")
 
 func NewClient[C any](fromName, toName string, fn func(string, ...client.Option) (C, error), opts ...client.Option) C {
-	opts = append(opts,
-		client.WithHostPorts(fmt.Sprintf("%s:8080", strings.ReplaceAll(toName, ".", "-"))),
+	opts = append([]client.Option{
+		WithHostPorts(fmt.Sprintf("%s:8080", strings.ReplaceAll(toName, ".", "-"))),
 		client.WithSuite(tracing.NewClientSuite()),
 		client.WithTracer(tracer),
 		client.WithClientBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: fromName}),
 		client.WithInstanceMW(middleware.LogMiddleware(toName)),
 		client.WithInstanceMW(middleware.EnvironmentMiddleware),
 		client.WithTransportProtocol(transport.GRPC),
-		client.WithMetaHandler(transmeta.ClientHTTP2Handler),
+		client.WithMetaHandler(transmeta.ClientHTTP2Handler)},
+		opts...,
 	)
 	if val, err := env.GetBool("IGNORE_MESH", false); err != nil && val {
 		opts = append(opts, client.WithLoadBalancer(&LoadBalancer{ServiceName: strings.ReplaceAll(toName, ".", "-")}))
@@ -47,6 +49,40 @@ func NewClient[C any](fromName, toName string, fn func(string, ...client.Option)
 		log.Error("[NewClient], toName=%s, err=%v", toName, err)
 	}
 	return cli
+}
+
+func WithHostPorts(hostports ...string) client.Option {
+	return client.Option{F: func(o *client.Options, di *utils.Slice) {
+		di.Push(fmt.Sprintf("WithHostPorts(%v)", hostports))
+
+		var ins []discovery.Instance
+		for _, hp := range hostports {
+			if _, err := net.ResolveTCPAddr("tcp", hp); err == nil {
+				ins = append(ins, discovery.NewInstance("tcp", hp, discovery.DefaultWeight, nil))
+				continue
+			}
+			panic(fmt.Errorf("WithHostPorts: invalid '%s'", hp))
+		}
+
+		if len(ins) == 0 {
+			panic("WithHostPorts() requires at least one argument")
+		}
+
+		o.Targets = strings.Join(hostports, ",")
+		o.Resolver = &discovery.SynthesizedResolver{
+			ResolveFunc: func(ctx context.Context, key string) (discovery.Result, error) {
+				return discovery.Result{
+					Cacheable: true,
+					CacheKey:  "fixed",
+					Instances: ins,
+				}, nil
+			},
+			NameFunc: func() string { return o.Targets },
+			TargetFunc: func(ctx context.Context, target rpcinfo.EndpointInfo) string {
+				return o.Targets
+			},
+		}
+	}}
 }
 
 type LoadBalancer struct {
